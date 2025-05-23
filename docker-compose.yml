@@ -1,0 +1,123 @@
+version: '3.8'
+
+services:
+  frontend:
+    build: 
+      context: ./frontend
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    security_opt:
+      - apparmor=zuno-marketplace
+    networks:
+      - onion_net
+    environment:
+      - NODE_ENV=production
+      - NO_JS_TRACKING=1
+      - NO_COOKIES=1
+      - NO_IP_LOGS=1
+    volumes:
+      - frontend_data:/app/.next
+    depends_on:
+      - backend
+      - tor
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    security_opt:
+      - apparmor=zuno-marketplace
+    networks:
+      - onion_net
+      - tailscale_net
+    environment:
+      - PYTHONUNBUFFERED=1
+      - NO_IP_LOGGING=1
+      - SECURE_HEADERS=1
+    volumes:
+      - type: volume
+        source: zfs_encrypted
+        target: /app/data
+        volume:
+          nocopy: true
+      - tor_data:/tor_data:ro
+    depends_on:
+      - postgres
+      - tor
+
+  postgres:
+    image: postgres:15-alpine
+    restart: unless-stopped
+    security_opt:
+      - apparmor=zuno-marketplace
+    networks:
+      - tailscale_net
+    environment:
+      - POSTGRES_USER=zuno
+      - POSTGRES_PASSWORD_FILE=/run/secrets/db_password
+      - POSTGRES_DB=marketplace
+    volumes:
+      - type: volume
+        source: zfs_encrypted
+        target: /var/lib/postgresql/data
+        volume:
+          nocopy: true
+    secrets:
+      - db_password
+
+  tor:
+    build:
+      context: ./tor
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    security_opt:
+      - apparmor=zuno-marketplace
+    networks:
+      - onion_net
+    volumes:
+      - ./tor/torrc:/etc/tor/torrc:ro
+      - tor_data:/var/lib/tor
+    cap_drop:
+      - ALL
+    cap_add:
+      - NET_BIND_SERVICE
+
+  tailscale:
+    image: tailscale/tailscale
+    restart: unless-stopped
+    privileged: true
+    networks:
+      - tailscale_net
+    environment:
+      - TS_AUTH_KEY=${TAILSCALE_AUTH_KEY}
+      - TS_ROUTES=10.0.0.0/24
+    volumes:
+      - /dev/net/tun:/dev/net/tun
+      - tailscale_state:/var/lib/tailscale
+
+networks:
+  onion_net:
+    internal: true
+  tailscale_net:
+    internal: true
+
+volumes:
+  frontend_data:
+    driver: local
+  zfs_encrypted:
+    driver: zfs
+    driver_opts:
+      encryption: aes-256-gcm
+      keylocation: file:///run/secrets/zfs_key
+      keyformat: raw
+  tor_data:
+    driver: local
+  tailscale_state:
+    driver: local
+
+secrets:
+  db_password:
+    file: ./secrets/db_password.txt
+  zfs_key:
+    file: ./secrets/zfs_key.txt
