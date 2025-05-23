@@ -1,0 +1,55 @@
+#include <tunables/global>
+
+profile zuno-marketplace flags=(attach_disconnected) {
+  #include <abstractions/base>
+  #include <abstractions/nameservice>
+  #include <abstractions/openssl>
+  #include <abstractions/python>
+  #include <abstractions/tor>
+
+  # Node.js frontend
+  /usr/bin/node ix,
+  /app/** r,
+  /app/node_modules/** r,
+  /app/.next/** rw,
+  
+  # Python backend
+  /usr/bin/python3 ix,
+  /app/backend/** r,
+  /var/log/zuno-marketplace/* w,
+  
+  # ZFS encrypted storage
+  /dev/zfs r,
+  /dev/zvol/** rw,
+  /sys/module/zfs/** r,
+  
+  # Tor hidden service
+  /var/lib/tor/hidden_service/** rw,
+  
+  # Network access
+  network tcp,
+  network unix,
+  
+  # Database access
+  /var/lib/postgresql/** rw,
+  
+  # Deny access to sensitive files
+  deny /etc/shadow r,
+  deny /etc/passwd r,
+  deny /proc/** r,
+  deny /sys/** r,
+  
+  # Tailscale VPN
+  /var/run/tailscale/** rw,
+  /var/lib/tailscale/** rw,
+  
+  # Temporary files
+  /tmp/** rw,
+  
+  # Logging
+  /var/log/syslog w,
+  
+  # Required for graceful shutdown
+  signal (receive) peer=unconfined,
+  signal (send,receive) peer=zuno-marketplace,
+}
